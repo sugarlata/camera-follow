@@ -1,10 +1,14 @@
+print('Import time')
 import time
+print('Import serial')
 import serial
+print('Import functools')
 import functools
-import multiprocessing
+print('Import list_ports')
 import serial.tools.list_ports as list_ports
 
 
+print('Import EmotimoLogger')
 from custom_logging import EmotimoLogger
 
 
@@ -103,11 +107,11 @@ class EmotimoSerial:
             if contains in line:
                 cont = False
 
-    def clear_buffer_until_all(self, pan_resp, tilt_resp, slide_resp):
+    def clear_buffer_until_all(self, pan_resp, tilt_resp, slide_resp, ignore_slide=False):
 
         pan_cont = True
         tilt_cont = True
-        slide_cont = True
+        slide_cont = not ignore_slide
         while pan_cont or tilt_cont or slide_cont:
             line = self.ser.readline().decode()
             self._log('DEBUG', line)
@@ -153,11 +157,11 @@ class EmotimoSerial:
     def set_slide(self, value):
         self.motor_move(3, value)
 
-    def set_all(self, values):
+    def set_all(self, values, ignore_slide=False):
 
-        pan = values['pan']
-        tilt = values['tilt']
-        slide = values['slide']
+        pan = values.get('pan', 0)
+        tilt = values.get('tilt', 0)
+        slide = values.get('slide', 0)
 
         self.clear_buffer()
         pan_command = 'mm %s %s\r\n' % (str(1), str(pan))
@@ -172,9 +176,7 @@ class EmotimoSerial:
         tilt_response = 'mp %s %s\r\n' % (str(2), str(tilt))
         slide_response = 'mp %s %s\r\n' % (str(3), str(slide))
 
-        self.clear_buffer_until_all(pan_response, tilt_response, slide_response)
-
-
+        self.clear_buffer_until_all(pan_response, tilt_response, slide_response, ignore_slide)
 
     def set_pulse_rate(self, motor, value):
         
@@ -194,4 +196,25 @@ class EmotimoSerial:
         self.ser.write(command.encode('ascii'))
         self.clear_buffer_until('pr %s %s\r\n' % (str(motor), str(value)))
 
+    def zero_motor(self, motor):
+
+        if motor not in self._motors:
+            return ret_obj(False, "Motor is not correct number")
+
+        self.clear_buffer()
+        zero_command = "zm %s\r\n" % str(motor)
+        zero_response = "mp %s 0\r\n" % str(motor)
         
+        self.ser.write(zero_command.encode('ascii'))
+
+        self.clear_buffer_until(zero_response)
+
+    def zero_all_motors(self):
+        self.zero_motor(1)
+        self.zero_motor(2)
+        self.zero_motor(3)
+
+
+
+
+

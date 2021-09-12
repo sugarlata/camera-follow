@@ -1,4 +1,12 @@
 <html>
+    <style>
+        .buttonSpacing {
+            margin: 10px
+        }
+        .verSpacing {
+            height: 10px
+        }
+    </style>
     <head>
         <title>Camera Following</title>
     </head>
@@ -10,6 +18,54 @@
             <img src="/video_feed" id="imageStream" width="640" height="480">
             <script type="text/javascript" src="mouse-click.js"></script>
         </center>
+        <center>
+            <button class=buttonSpacing onclick="openSerial(this)">Open Serial</button>
+            <button class=buttonSpacing onclick="readySerial(this)">Serial Ready</button>
+            <button class=buttonSpacing onclick="closeSerial(this)">Close Serial</button>
+            <script type="text/javascript" src="serial.js"></script>
+        </center>
+        <center>
+            <button class=buttonSpacing onclick="moveUp(this)">Tilt Up</button>
+            <button class=buttonSpacing onclick="moveDown(this)">Tilt Down</button>
+            <button class=buttonSpacing onclick="moveLeft(this)">Pan Left</button>
+            <button class=buttonSpacing onclick="moveRight(this)">Pan Right</button>
+            <button class=buttonSpacing onclick="slideLeft(this)">Slide Left</button>
+            <button class=buttonSpacing onclick="slideRight(this)">Slide Right</button>
+            <script type="text/javascript" src="move.js"></script>
+        </center>
+        <center>
+            <button class=buttonSpacing onclick="moveReset(this)">Move to Base</button>
+            <button class=buttonSpacing onclick="setZero(this)">Reset to Zero</button>
+        </center>
+        <div class=verSpacing></div>
+        <center>
+            <div class=buttonSpacing>
+                <div>
+                    Pan: <input type="number" name="panInput" id="panInput">
+                </div>
+                <div>
+                    (90° ~ 41,000)
+                </div>    
+            </div>
+            <div class=buttonSpacing>
+                <div>
+                    Tilt: <input class=buttonSpacing type="number" name="tiltInput" id="tiltInput">
+                </div>
+                <div>
+                    (-20,000 - 30,000 from horizontal)
+                </div>
+            </div>
+            <div class=buttonSpacing>
+                <div>
+                    Slide: <input class=buttonSpacing type="number" name="slideInput" id="slideInput">  
+                </div>
+                <div>
+                    (Something - Something)
+                </div>    
+            </div>
+            <button class=buttonSpacing onclick="moveAll(this)">Move All  Together</button>
+        </center>
+        
         
     </body>
 </html>
