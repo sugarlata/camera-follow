@@ -35,7 +35,7 @@ import serial.tools.list_ports as list_ports
 # Get Camera Ready
 q = queue.Queue()
 sc = StreamCamera(
-    {"framerate": 4},
+    {"framerate": 10},
     q
 )
 
@@ -197,7 +197,24 @@ class ImageClick(Resource):
 
     def post(self):
         json_body = json.loads(request.data.decode())
-        print(json.dumps(json_body, indent=4))
+        try:
+            sc.set_point(json_body['x'], json_body['y'])
+        except Exception as e:
+            print(e)
+        return
+
+
+class CameraAPI(Resource):
+
+    def post(self):
+        json_body = json.loads(request.data.decode())
+        
+        if json_body.get('action') == 'start':
+            sc.start_following()
+
+        if json_body.get('action') == 'stop':
+            sc.stop_following()
+        
         return
 
 
@@ -259,6 +276,7 @@ if __name__ == '__main__':
     api.add_resource(ImageClick, "/image-click")
     api.add_resource(SerialClick, "/serial")
     api.add_resource(MoveClick, "/move")
+    api.add_resource(CameraAPI, "/camera")
 
     @app.route('/camera-follow')
     def camera_follow():
@@ -297,6 +315,10 @@ if __name__ == '__main__':
     @app.route('/move.js')
     def move():
         return send_from_directory(app.static_folder, 'move.js')
+
+    @app.route('/camera.js')
+    def camera():
+        return send_from_directory(app.static_folder, 'camera.js')
 
     try:
         app.run('0.0.0.0', port=8000)
