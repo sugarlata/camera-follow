@@ -14,8 +14,8 @@ from picamera.array import PiRGBArray
 
 
 lk_params = {
-    'winSize': (25, 25),
-    'maxLevel': 3,
+    'winSize': (4, 4),
+    'maxLevel': 1,
     'criteria': (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
 
 }
@@ -23,7 +23,7 @@ lk_params = {
 
 class StreamCamera:
 
-	def __init__(self, config, queue):
+	def __init__(self, config, streamingQueue, controlQueue):
 
 		self.camera = PiCamera()
 		self.resolution = config.get("resolution", (640, 480))
@@ -32,13 +32,14 @@ class StreamCamera:
 		self.camera.resolution = self.resolution
 		self.camera.framerate = self.framerate
 		self.raw_capture = None
-		self.push_frames = False
 
-		self.queue = queue
+		self.streamingQueue = streamingQueue
+		self.controlQueue = controlQueue
 		self.thread = None
 
 		self.orig_point = None
 		self.point = None
+		self.point_in_wait = None
 		self.following = False
 
 	def initialize_camera(self):
@@ -47,7 +48,7 @@ class StreamCamera:
 
 	def set_point(self, x, y):
 		self.orig_point = (int(x), int(y))
-		self.point = np.array([[x, y]], dtype = np.float32)
+		self.point_in_wait = np.array([[x, y]], dtype = np.float32)
 
 	def start_following(self):
 		self.following = True
@@ -69,10 +70,14 @@ class StreamCamera:
 			dx = 0
 			dy = 0
 
+			if self.point_in_wait is not None:
+				self.point = self.point_in_wait
+				self.point_in_wait = None
+
 			if self.point is not None:
 				cv2.circle(image, self.orig_point, 5, (0,0,255), 2)
 			
-			if self.following and last_gray_image is not None:
+			if self.following and last_gray_image is not None and self.point is not None:
 				# print('Starting Calculation - Optical Flow')
 				new_point, status, error = cv2.calcOpticalFlowPyrLK(
 					last_gray_image,
@@ -87,7 +92,6 @@ class StreamCamera:
 
 				dx = x - (image_width / 2)
 				dy = (image_height / 2) - y
-
 				cv2.circle(image, (int(x), int(y)), 5, (0,255,0), 3)
 
 			self.raw_capture.truncate(0)
@@ -95,20 +99,17 @@ class StreamCamera:
 			capture_send_threshold = time_last_capture + float(1) / float(self.framerate)
 			dt = time.time()
 			if dt > capture_send_threshold:
-				self.queue.put((image, (dx, dy)))
+				self.streamingQueue.put(image)
+				self.controlQueue.put((dx, dy))
 				time_last_capture = dt
 
 			last_gray_image = gray_image.copy()
 
-			if not self.push_frames:
-				return
-				
 	def start_capture(self):
 		
 		if self.thread is not None:
 			return
 
-		self.push_frames = True
 		self.thread = threading.Thread(
 			target=self._capture_thread
 			# args=(self,)
@@ -121,7 +122,6 @@ class StreamCamera:
 		if self.thread is None:
 			return
 
-		self.push_frames = False
 		self.thread.join()
 		time.sleep(0.5)
 		self.thread = None

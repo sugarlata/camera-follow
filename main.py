@@ -2,6 +2,8 @@ print('Import io')
 import io
 print('Import os')
 import os
+print('Import base64')
+import base64
 print('Import cv2')
 import cv2
 print('Import json')
@@ -10,15 +12,13 @@ print('Import time')
 import time
 print('Import queue')
 import queue
-
 print('Import threading')
-from threading import Condition
+import threading
+
 print('Import flask')
 from flask import Flask, send_from_directory, request, Response
 print('Import flask_sock')
 from flask_sock import Sock
-print('Import waitress')
-from waitress import serve
 print('Import Simple PID')
 from simple_pid import PID
 
@@ -28,15 +28,20 @@ from camera import StreamCamera
 print('Import EmotimoSerial')
 from emotimo_serial import EmotimoSerial
 
+print('Import adb module')
+from adb_android import ADBControl
+
 print('Import Serial')
 import serial.tools.list_ports as list_ports
 
 
 # Get Camera Ready
-q = queue.Queue()
+streamingQ = queue.Queue()
+controlQ = queue.Queue()
 sc = StreamCamera(
     {"framerate": 10},
-    q
+    streamingQ,
+    controlQ
 )
 
 sc.initialize_camera()
@@ -44,6 +49,9 @@ sc.start_capture()
 
 streaming = True
 
+
+# Android Debug Bridge Setup
+adb = ADBControl({})
 
 # Get Emotimo Ready
 em = EmotimoSerial()
@@ -58,8 +66,8 @@ em_status = {
 # Camera Movement Control
 
 pan_limits = (
-    -41000,
-    41000
+    -50000,
+    50000
 )
 
 tilt_limits = (
@@ -68,22 +76,23 @@ tilt_limits = (
 )
 
 pid_x = PID(
-    1,
-    0.1,
-    0.1,
+    20,
+    0,
+    0,
     0
 )
 
 pid_y = PID(
-    1,
-    0.1,
-    0.1,
+    20,
+    0,
+    0,
     0
 )
 
-last_move = 0
-
-enable_camera_move = False
+enable_pts_move = False
+control_loop_enabled = True
+camera_shooting = False
+pts_interval = 1
 
 def emotimo_open_serial():
     print("Opening Em Connection")
@@ -93,6 +102,7 @@ def emotimo_open_serial():
 def emotimo_close_serial():
     print("Closing Em Connection")
     em.close_connection()
+
 
 def emotimo_ready_serial():
     global em_ready
@@ -122,42 +132,8 @@ def emotimo_move_all(pan, tilt, slide, ignore_slide=True):
     print('Set Pan: %s' % str(pan))
     print('Set Tilt: %s' % str(tilt))
     print('Set Slide: %s' % str(slide))
-    em.set_all(
-        {
-            "pan": pan,
-            "tilt": tilt,
-            "slide": slide
-        },
-        ignore_slide
-    )
 
-    em_status["pan"] = pan
-    em_status["tilt"] = tilt
-    em_status["slide"] = slide
-
-    em_ready = True
-
-
-def process_diff(diff, interval=2):
-
-    dt = time.time()
-
-    global last_move
-    if last_move + interval > dt:
-        return
-
-    if not enable_camera_move:
-        return
-
-    dx, dy = diff
-
-    delta_pan = pid_x(dx)
-    pan = em_status['pan'] + delta_pan
-
-    delta_tilt = pid_y(dy)
-    tilt = em_status['tilt'] + delta_tilt
-
-    # Enable Limits
+    # Enforce Limits
     if pan < 0:
         pan = max(pan, pan_limits[0])
     if pan > 0:
@@ -168,13 +144,24 @@ def process_diff(diff, interval=2):
     if tilt > 0:
         tilt = min(tilt, tilt_limits[1])
 
-    print("Pan ", pan)
-    print("Tilt:", tilt)
+    em.set_all(
+        {
+            "pan": pan,
+            "tilt": tilt,
+            "slide": slide
+        },
+        ignore_slide
+    )
+    
 
-    # emotimo_move_all(pan, tilt, 0)
+    em_status["pan"] = pan
+    em_status["tilt"] = tilt
+    em_status["slide"] = slide
+
+    em_ready = True
 
 
-def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_increment=10000):
+def emotimo_move(pts, direction, pan_increment=1000, tilt_increment=1000, slide_increment=10000):
 
     global em_ready
     global em_status
@@ -185,7 +172,23 @@ def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_incremen
 
     em_ready = False
 
-    if action == 'left':
+    if pts == 'tilt' and direction == 'up':
+        cur_value = em_status['tilt']
+        cur_value += tilt_increment
+        print('Set Tilt: %s' % str(cur_value))
+        em.set_tilt(cur_value)
+        em_status['tilt'] = cur_value
+        em_ready = True
+
+    if pts == 'tilt' and direction == 'down':
+        cur_value = em_status['tilt']
+        cur_value -= tilt_increment
+        print('Set Tilt: %s' % str(cur_value))
+        em.set_tilt(cur_value)
+        em_status['tilt'] = cur_value
+        em_ready = True
+
+    if pts == 'pan' and direction == 'left':
         cur_value = em_status['pan']
         cur_value -= pan_increment
         print('Set Pan: %s' % str(cur_value))
@@ -194,7 +197,7 @@ def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_incremen
         em_ready = True
 
 
-    if action == 'right':
+    if pts == 'pan' and direction == 'right':
         cur_value = em_status['pan']
         cur_value += pan_increment
         print('Set Pan: %s' % str(cur_value))
@@ -202,7 +205,7 @@ def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_incremen
         em_status['pan'] = cur_value
         em_ready = True
 
-    if action == 'slide_left':
+    if pts == 'slide' and direction == 'left':
         cur_value = em_status['slide']
         cur_value -= slide_increment
         print('Set Slide: %s' % str(cur_value))
@@ -210,7 +213,7 @@ def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_incremen
         em_status['slide'] = cur_value
         em_ready = True
 
-    if action == 'slide_right':
+    if pts == 'slide' and direction == 'right':
         cur_value = em_status['slide']
         cur_value += slide_increment
         print('Set Slide: %s' % str(cur_value))
@@ -218,35 +221,21 @@ def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_incremen
         em_status['slide'] = cur_value
         em_ready = True
 
-    if action == 'up':
-
-        cur_value = em_status['tilt']
-        cur_value += tilt_increment
-        print('Set Tilt: %s' % str(cur_value))
-        em.set_tilt(cur_value)
-        em_status['tilt'] = cur_value
-        em_ready = True
-
-    if action == 'down':
-        cur_value = em_status['tilt']
-        cur_value -= tilt_increment
-        print('Set Tilt: %s' % str(cur_value))
-        em.set_tilt(cur_value)
-        em_status['tilt'] = cur_value
-        em_ready = True
-
-    if action == 'reset':
+    if pts == 'all' and direction == 'origin':
         print('Set Pan: 0')
         print('Set Tilt: 0')
+        print('Ignoring Slide')
+        
         em.set_all({
             "pan": 0,
             "tilt": 0
-        })
+        }, ignore_slide=True)
+
         em_status['pan'] = 0
         em_status['tilt'] = 0
         em_ready = True
         
-    if action == 'zero':
+    if pts == 'all' and direction == 'reset':
         print('Changing Pan: 0')
         print('Changing Tilt: 0')
         em.zero_all_motors()
@@ -254,119 +243,174 @@ def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_incremen
         em_status['tilt'] = 0
         em_ready = True
 
+       
+def process_diff(dx, dy):
+
+    print('')
+    print('DX: ', dx)
+    print('DY: ', dy)
+
+    dt = time.time()
+
+    # delta_pan = dx
+    delta_pan = -1 * pid_x(dx)
+    pan = int(em_status['pan']) + int(delta_pan)
+
+    # delta_tilt = dy
+    delta_tilt = -1 * pid_y(dy)
+    tilt = int(em_status['tilt']) + int(delta_tilt)
+
+    print('Delta Pan: ', delta_pan)
+    print('Delta Tilt: ', delta_tilt)
+
+    # Enforce Limits
+    if pan < 0:
+        pan = max(pan, pan_limits[0])
+    if pan > 0:
+        pan = min(pan, pan_limits[1])
+
+    if tilt < 0:
+        tilt = max(tilt, tilt_limits[0])
+    if tilt > 0:
+        tilt = min(tilt, tilt_limits[1])
+
+    print("Pan: ", pan)
+    print("Tilt: ", tilt)
+
+    emotimo_move_all(pan, tilt, 0)
+
+ 
+def control_loop(controlQ, pixel_deadzone=0):
+
+    global control_loop_enabled
+
+    pts_last_time = 0
+
+    while control_loop_enabled:
         
-def take_photo():
+        dt = time.time()
+        reset_dt = False
 
-    print("Take Photo")
+        if camera_shooting:
+            
+            if pts_last_time + pts_interval < dt:
+                reset_dt = True
+                camera_take_shot()
 
+        if enable_pts_move:
+
+            while not controlQ.empty():
+                dx, dy = controlQ.get()
+            
+            if abs(dx) < pixel_deadzone:
+                dx = 0
+
+            if abs(dy) < pixel_deadzone:
+                dy = 0
+
+
+            if pts_last_time + pts_interval < dt:
+                process_diff(dx, dy)
+                reset_dt = True
+
+        if reset_dt:
+            pts_last_time = dt
+
+
+def camera_take_shot():
+    adb.take_photo()
 
 def receive_serial(data):
-    print(data)
+
+    action = data.get('action')    
+
+    if action == 'open':
+        emotimo_open_serial()
+
+    if action == 'ready':
+        emotimo_ready_serial()
+
+    if action == 'close':
+        emotimo_close_serial()
 
 
 def receive_pts(data):
-    print(data)
+
+    global enable_pts_move
+    
+    action = data.get('action')
+
+    if action == 'move':
+
+        detail = data.get('detail', {})
+        pts = detail.get('pts')
+        direction = detail.get('direction')
+        emotimo_move(pts, direction)
+
+    if action == 'reset-origin':
+
+        detail = data.get('detail', {})
+        pts = detail.get('pts')
+        emotimo_move(pts, 'reset')
+
+    if action == 'move-all':
+        pan = data.get('detail', {}).get('pan', 0)
+        tilt = data.get('detail', {}).get('tilt', 0)
+        slide = data.get('detail', {}).get('slide', 0)
+        emotimo_move_all(int(pan), int(tilt), slide)
+
+    if action == 'follow':
+
+        if data.get('detail') == 'enable':
+            enable_pts_move = True
+
+        if data.get('detail') == 'disable':
+            enable_pts_move = False
 
 
 def receive_obj_tracking(data):
-    print(data)
+    
+    action = data.get('action')
 
+    if action:
+        sc.start_following()
+    else:
+        sc.stop_following()
+    
 
 def receive_click(data):
-    print(data)
+    
+    action = data.get('action')
+
+    if action == 'pos-update':
+
+        x = data.get('position', {}).get('x', 0)
+        y = data.get('position', {}).get('y', 0)
+
+        sc.set_point(x, y)
 
 
 def receive_camera(data):
-    print(data)
+    global pts_interval
+    global camera_shooting
+    
+    action = data.get('action')
+    print(action)
 
+    if action == 'take-shot':
+        camera_take_shot()
 
-class ImageClick:
+    if action == 'start-interval':
+        camera_shooting = True
 
-    def post(self):
-        json_body = json.loads(request.data.decode())
-        try:
-            sc.set_point(json_body['x'], json_body['y'])
-        except Exception as e:
-            print(e)
-        return
+    if action == 'stop-interval':
+        camera_shooting = False
 
+    if action == 'set-interval':
+        pts_interval = float(data.get('detail', {}).get('interval', 2))
 
-# class CameraMove:
-
-#     def post(self):
-#         json_body = json.loads(request.data.decode())
-#         try:
-#             if json_body.get('action') == True:
-#                 global enable_camera_move
-#                 enable_camera_move = True
-#             elif json_body.get('action') == False:
-#                 global enable_camera_move
-#                 enable_camera_move = False
-#         except Exception as e:
-#             print(e)
-#         return
-
-
-class CameraAPI:
-
-    def post(self):
-        json_body = json.loads(request.data.decode())
-        
-        if json_body.get('action') == 'start':
-            sc.start_following()
-
-        if json_body.get('action') == 'stop':
-            sc.stop_following()
-        
-        return
-
-
-class SerialClick:
-
-    def post(self):
-        json_body = json.loads(request.data.decode())
-
-        action = json_body.get('action')
-
-        if action == 'open':
-            emotimo_open_serial()
-
-        if action == 'ready':
-            emotimo_ready_serial()
-
-        if action == 'close':
-            emotimo_close_serial()
-
-        return
-
-
-
-class MoveClick:
-
-    def post(self):
-        json_body = json.loads(request.data.decode())
-        
-        action = json_body.get('action')
-
-        if action in [
-            'up',
-            'down',
-            'left',
-            'right',
-            'reset',
-            'zero'
-        ]:
-            emotimo_move(action)
-
-        if action == 'moveAll':
-            emotimo_move_all(
-                int(json_body.get("pan", 0)),
-                int(json_body.get("tilt", 0)),
-                int(json_body.get("slide", 0))
-            )
-
-        return
-
+    if action == 'modify-interval':
+        print('Too Hard for the moment')
 
 
 
@@ -381,12 +425,63 @@ if __name__ == '__main__':
 
     @sock.route('/control')
     def control(ws):
-        while True:
-            data = ws.receive()
 
+        socket_open = True
+        while socket_open:
+            
+            resp_data = ws.receive()
 
-            print(data)
+            if resp_data == 'finish':
+                socket_open = False
+                continue
 
+            data = json.loads(resp_data)
+
+            module = data.get('module', '')
+
+            if module == 'serial':
+                receive_serial(data)
+
+            if module == 'pts-move':
+                receive_pts(data)
+
+            if module == 'obj-track':
+                receive_obj_tracking(data)
+
+            if module == 'click-position':
+                receive_click(data)
+
+            if module == 'camera':
+                receive_camera(data)
+
+    @sock.route('/live')
+    def live(ws):
+        
+        resp = ws.receive()
+
+        if resp == 'begin':
+            stream = True
+        else:
+            stream = False
+
+        while stream:
+
+            resp = ws.receive()
+            if resp == 'finish':
+                stream = False
+                continue
+
+            while not streamingQ.empty():
+                image = streamingQ.get()
+    
+            _, buffer = cv2.imencode('.jpg', image)
+            frame = buffer.tobytes()
+
+            send_data = base64.b64encode(frame).decode()
+            ws.send(send_data)
+
+        ws.close(1000, 'Closing WS Connection')
+            
     @app.route('/camera-follow')
     def camera_follow():
         return send_from_directory(app.static_folder, 'index.html')
@@ -395,36 +490,19 @@ if __name__ == '__main__':
     def favicon():
         return send_from_directory(app.static_folder, 'favico.ico')
     
-    def gen():
-        while not q.empty():
-            q.get()
-
-        while streaming:
-            image, diff = q.get()
-            ret, buffer = cv2.imencode('.jpg', image)
-            frame = buffer.tobytes()
-            process_diff(diff)
-
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
-    @app.route('/video_feed')
-    def video_feed():
-        resp = Response(
-            response=gen(),
-            mimetype="multipart/x-mixed-replace; boundary=frame"
-        )
-
-        return resp
-
     @app.route('/camera-follow.js')
     def mouse_click():
         return send_from_directory(app.static_folder, 'camera-follow.js')
 
+    # PTS  and Photo Taking Control Thread
+    control_thread = threading.Thread(target=control_loop, args=(controlQ,))
+    control_thread.start() 
+
     try:
         app.run('0.0.0.0', port=8000)
-        serve(app)
     finally:
+        control_loop_enabled = False
+        control_thread.join()
         streaming = False
         sc.stop_capture()
         em.close_connection()

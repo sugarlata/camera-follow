@@ -28,11 +28,45 @@
                     <h1>Raspberry Pi - Live Camera</h1>
                 </center>
                 <center>
-                    <img src="/video_feed" id="imageStream" width="640" height="480">
+                    <img src="" id="imageStream" width="640" height="480">
                     </center>
                 <div class=verSpacing></div>
                 <center>
                     Click on the image to select the feature to track
+                </center>
+                <div class=verSpacing></div>
+                <center>
+                    <div>
+                        Set Interval: <input class=buttonSpacing type="number" name="setIntervalInput" id="setIntervalInput">
+                        <button class=buttonSpacing onclick="setInterval(this)">Set Interval</button>
+                        
+                    </div>
+                    
+                </center>
+                <div class=verSpacing></div>
+                <div class=verSpacing></div>
+                <center>
+                    <div>
+                        Modify Interval: <input class=buttonSpacing type="number" name="modifyIntervalInput" id="modifyIntervalInput">
+                    </div>
+                    <div>
+                        Interval Ramp: <input class=buttonSpacing type="number" name="modifyIntervalNumberInput" id="modifyIntervalNumberInput">
+                    </div>
+                    <div>
+                        <button class=buttonSpacing onclick="setInterval(this)">Set Interval</button>
+                    </div>
+                </center>
+                <div class=verSpacing></div>
+                <center>
+                    <div>
+                        <button class=buttonSpacing onclick="startInterval(this)">Start Interval</button>
+                        <button class=buttonSpacing onclick="stopInterval(this)">Stop Interval</button>
+                    </div>
+                </center>
+                <center>
+                    <div>
+                        <button class=buttonSpacing onclick="takeShot(this)">Take Photo</button>
+                    </div>
                 </center>
                 
             </div>

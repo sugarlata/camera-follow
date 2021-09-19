@@ -1,26 +1,57 @@
 // Initialization
 var ipHost = location.host
 
+// -------------------------------------------------------------------------
 // Socket Setup
+
 var socket = new WebSocket('ws://' + ipHost + '/control');
-socket.onmessage = function(evt) {
+socket.onmessage = function(msg) {
     try {
-        message = JSON.parse(evt.data);
+        message = JSON.parse(msg.data);
         if (message.responseType == 'log') {
             getLoggingResponse(message);
         }
 
     } catch (err) {
         console.log('Issue parsing response from server');
+        console.log(err);
     }
 }
-
-
 
 // Send on Socket
 function sendSocketData(data){
     socket.send(JSON.stringify(data));
 }
+
+// Camera Image Sourcing
+
+var imageSocket = new WebSocket('ws://' + ipHost + '/live');
+
+imageSocket.onopen = function(){
+    imageSocket.send('begin');
+    imageSocket.send(1);
+}
+
+imageSocket.onmessage = function(msg) {
+    try {
+        document.getElementById('imageStream').setAttribute('src', 'data:image/jpg;base64, ' + msg.data);
+        imageSocket.send(1);
+    } catch (err) {
+        console.log('Issue Parsing Image Data');
+        console.log(err);
+    }
+}
+
+
+window.onbeforeunload = function() {
+    socket.send('finish');
+    socket.close(1000, 'Page Unloading');
+    imageSocket.send('finish');
+    imageSocket.close(1000, 'Page Unloading');
+}
+
+
+
 
 // -------------------------------------------------------------------------
 // Serial Functions
@@ -54,7 +85,7 @@ function closeSerial(event) {
 
 function ptsStartFollow(event) {
     const data = {
-        'module': 'pt-move',
+        'module': 'pts-move',
         'action': 'follow',
         'detail': 'enable'
     }
@@ -63,7 +94,7 @@ function ptsStartFollow(event) {
 
 function ptsStopFollow(event) {
     const data = {
-        'module': 'pt-move',
+        'module': 'pts-move',
         'action': 'follow',
         'detail': 'disable'
     }
@@ -72,7 +103,7 @@ function ptsStopFollow(event) {
 
 function ptsSend(pts, direction) {
     const data = {
-        'module': 'pt-move',
+        'module': 'pts-move',
         'action': 'move',
         'detail': {
             'pts': pts,
@@ -113,8 +144,8 @@ function moveOrigin(event) {
 function resetPosition(event){
     
     const data = {
-        'module': 'pt-move',
-        'action': 'move-origin',
+        'module': 'pts-move',
+        'action': 'reset-origin',
         'detail': {
             'pts': 'all'
         }
@@ -140,7 +171,7 @@ function ptsSet(event) {
     }
 
     const data = {
-        'module': 'pt-move',
+        'module': 'pts-move',
         'action': 'move-all',
         'detail': {
             'pan': pan,
@@ -196,8 +227,8 @@ function returnClickPos(event) {
 // Camera Functions
 
 function setInterval(event){
-
-    let interval = 5;
+    
+    let interval = document.getElementById("setIntervalInput").value;
 
     const data = {
         'module': 'camera',
@@ -213,14 +244,17 @@ function setInterval(event){
 
 function modifyInterval(event){
 
-    let interval = 5;
-    let modifyType = 'sinusoidal'
+    let interval = document.getElementById("modifyIntervalInput").value;
+    let intervalRamp = document.getElementById("modifyIntervalNumberInput").value;
+
+    let modifyType = 'sinusoidal';
 
     const data = {
         'module': 'camera',
         'action': 'modify-interval',
         'detail': {
             'interval': interval,
+            'interval-ramp': intervalRamp,
             'modify-type': modifyType
         }
     }
@@ -251,7 +285,7 @@ function stopInterval(event){
 
 }
 
-function takeShotImmediate(event){
+function takeShot(event){
 
     const data = {
         'module': 'camera',
