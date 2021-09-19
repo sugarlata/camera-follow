@@ -2,7 +2,7 @@
 var ipHost = location.host
 
 // Socket Setup
-var socket = new WebSocket('ws://' + ipHost + 'control');
+var socket = new WebSocket('ws://' + ipHost + '/control');
 socket.onmessage = function(evt) {
     try {
         message = JSON.parse(evt.data);
@@ -52,7 +52,7 @@ function closeSerial(event) {
 // -------------------------------------------------------------------------
 // PTS Functions
 
-function ptStartFollow(event) {
+function ptsStartFollow(event) {
     const data = {
         'module': 'pt-move',
         'action': 'follow',
@@ -61,7 +61,7 @@ function ptStartFollow(event) {
     sendSocketData(data);
 }
 
-function ptStopFollow(event) {
+function ptsStopFollow(event) {
     const data = {
         'module': 'pt-move',
         'action': 'follow',
@@ -272,4 +272,4 @@ function getLoggingResponse(data) {
 // -------------------------------------------------------------------------
 // Listeners
 
-document.addEventListener("click", returnMousePos);
+document.addEventListener("click", returnClickPos);

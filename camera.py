@@ -66,6 +66,8 @@ class StreamCamera:
 			image_height = image.shape[0]
 			image_width = image.shape[1]
 			gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+			dx = 0
+			dy = 0
 
 			if self.point is not None:
 				cv2.circle(image, self.orig_point, 5, (0,0,255), 2)
@@ -82,9 +84,9 @@ class StreamCamera:
 				# print('Finished Calculation')
 				self.point = new_point
 				x, y = new_point.ravel()
-				
- 		 	    dx = x - (image_width / 2)
-				dy = (image_height / 2) - y)
+
+				dx = x - (image_width / 2)
+				dy = (image_height / 2) - y
 
 				cv2.circle(image, (int(x), int(y)), 5, (0,255,0), 3)
 

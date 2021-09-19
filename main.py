@@ -10,8 +10,6 @@ print('Import time')
 import time
 print('Import queue')
 import queue
-print('Import PiCamera')
-import picamera
 
 print('Import threading')
 from threading import Condition
@@ -262,6 +260,26 @@ def take_photo():
     print("Take Photo")
 
 
+def receive_serial(data):
+    print(data)
+
+
+def receive_pts(data):
+    print(data)
+
+
+def receive_obj_tracking(data):
+    print(data)
+
+
+def receive_click(data):
+    print(data)
+
+
+def receive_camera(data):
+    print(data)
+
+
 class ImageClick:
 
     def post(self):
@@ -273,20 +291,20 @@ class ImageClick:
         return
 
 
-class CameraMove:
+# class CameraMove:
 
-    def post(self):
-        json_body = json.loads(request.data.decode())
-        try:
-            if json_body.get('action') == True:
-                global enable_camera_move
-                enable_camera_move = True
-            elif json_body.get('action') == False:
-                global enable_camera_move
-                enable_camera_move = False
-        except Exception as e:
-            print(e)
-        return
+#     def post(self):
+#         json_body = json.loads(request.data.decode())
+#         try:
+#             if json_body.get('action') == True:
+#                 global enable_camera_move
+#                 enable_camera_move = True
+#             elif json_body.get('action') == False:
+#                 global enable_camera_move
+#                 enable_camera_move = False
+#         except Exception as e:
+#             print(e)
+#         return
 
 
 class CameraAPI:
@@ -362,12 +380,20 @@ if __name__ == '__main__':
     sock = Sock(app)
 
     @sock.route('/control')
-    def control(data):
-        print(data)
+    def control(ws):
+        while True:
+            data = ws.receive()
+
+
+            print(data)
 
     @app.route('/camera-follow')
     def camera_follow():
         return send_from_directory(app.static_folder, 'index.html')
+    
+    @app.route('/favicon.ico')
+    def favicon():
+        return send_from_directory(app.static_folder, 'favico.ico')
     
     def gen():
         while not q.empty():
@@ -396,7 +422,7 @@ if __name__ == '__main__':
         return send_from_directory(app.static_folder, 'camera-follow.js')
 
     try:
-        app.run('0.0.0.0', port=80)
+        app.run('0.0.0.0', port=8000)
         serve(app)
     finally:
         streaming = False
