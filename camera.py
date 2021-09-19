@@ -63,6 +63,8 @@ class StreamCamera:
 		last_gray_image = None
 		for frame in self.camera.capture_continuous(self.raw_capture, format="bgr", use_video_port=True):
 			image = frame.array
+			image_height = image.shape[0]
+			image_width = image.shape[1]
 			gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
 			if self.point is not None:
@@ -80,6 +82,10 @@ class StreamCamera:
 				# print('Finished Calculation')
 				self.point = new_point
 				x, y = new_point.ravel()
+				
+ 		 	    dx = x - (image_width / 2)
+				dy = (image_height / 2) - y)
+
 				cv2.circle(image, (int(x), int(y)), 5, (0,255,0), 3)
 
 			self.raw_capture.truncate(0)
@@ -87,7 +93,7 @@ class StreamCamera:
 			capture_send_threshold = time_last_capture + float(1) / float(self.framerate)
 			dt = time.time()
 			if dt > capture_send_threshold:
-				self.queue.put(image)
+				self.queue.put((image, (dx, dy)))
 				time_last_capture = dt
 
 			last_gray_image = gray_image.copy()

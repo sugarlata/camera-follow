@@ -17,10 +17,12 @@ print('Import threading')
 from threading import Condition
 print('Import flask')
 from flask import Flask, send_from_directory, request, Response
-print('Import flask_restful')
-from flask_restful import Api, Resource
+print('Import flask_sock')
+from flask_sock import Sock
 print('Import waitress')
 from waitress import serve
+print('Import Simple PID')
+from simple_pid import PID
 
 print('Import StreamCamera')
 from camera import StreamCamera
@@ -55,6 +57,35 @@ em_status = {
     "slide": 0
 }
 
+# Camera Movement Control
+
+pan_limits = (
+    -41000,
+    41000
+)
+
+tilt_limits = (
+    -20000,
+    30000
+)
+
+pid_x = PID(
+    1,
+    0.1,
+    0.1,
+    0
+)
+
+pid_y = PID(
+    1,
+    0.1,
+    0.1,
+    0
+)
+
+last_move = 0
+
+enable_camera_move = False
 
 def emotimo_open_serial():
     print("Opening Em Connection")
@@ -108,6 +139,41 @@ def emotimo_move_all(pan, tilt, slide, ignore_slide=True):
 
     em_ready = True
 
+
+def process_diff(diff, interval=2):
+
+    dt = time.time()
+
+    global last_move
+    if last_move + interval > dt:
+        return
+
+    if not enable_camera_move:
+        return
+
+    dx, dy = diff
+
+    delta_pan = pid_x(dx)
+    pan = em_status['pan'] + delta_pan
+
+    delta_tilt = pid_y(dy)
+    tilt = em_status['tilt'] + delta_tilt
+
+    # Enable Limits
+    if pan < 0:
+        pan = max(pan, pan_limits[0])
+    if pan > 0:
+        pan = min(pan, pan_limits[1])
+
+    if tilt < 0:
+        tilt = max(tilt, tilt_limits[0])
+    if tilt > 0:
+        tilt = min(tilt, tilt_limits[1])
+
+    print("Pan ", pan)
+    print("Tilt:", tilt)
+
+    # emotimo_move_all(pan, tilt, 0)
 
 
 def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_increment=10000):
@@ -191,9 +257,12 @@ def emotimo_move(action, pan_increment=1000, tilt_increment=1000, slide_incremen
         em_ready = True
 
         
+def take_photo():
+
+    print("Take Photo")
 
 
-class ImageClick(Resource):
+class ImageClick:
 
     def post(self):
         json_body = json.loads(request.data.decode())
@@ -204,7 +273,23 @@ class ImageClick(Resource):
         return
 
 
-class CameraAPI(Resource):
+class CameraMove:
+
+    def post(self):
+        json_body = json.loads(request.data.decode())
+        try:
+            if json_body.get('action') == True:
+                global enable_camera_move
+                enable_camera_move = True
+            elif json_body.get('action') == False:
+                global enable_camera_move
+                enable_camera_move = False
+        except Exception as e:
+            print(e)
+        return
+
+
+class CameraAPI:
 
     def post(self):
         json_body = json.loads(request.data.decode())
@@ -218,7 +303,7 @@ class CameraAPI(Resource):
         return
 
 
-class SerialClick(Resource):
+class SerialClick:
 
     def post(self):
         json_body = json.loads(request.data.decode())
@@ -238,7 +323,7 @@ class SerialClick(Resource):
 
 
 
-class MoveClick(Resource):
+class MoveClick:
 
     def post(self):
         json_body = json.loads(request.data.decode())
@@ -266,31 +351,33 @@ class MoveClick(Resource):
 
 
 
+
+
 if __name__ == '__main__':
 
     # Initialize Flask
     app = Flask(__name__, static_folder="./html")
-    api = Api(app)
-    
-    # Get Flask Ready
-    api.add_resource(ImageClick, "/image-click")
-    api.add_resource(SerialClick, "/serial")
-    api.add_resource(MoveClick, "/move")
-    api.add_resource(CameraAPI, "/camera")
+
+    # Add WebSockets
+    sock = Sock(app)
+
+    @sock.route('/control')
+    def control(data):
+        print(data)
 
     @app.route('/camera-follow')
     def camera_follow():
         return send_from_directory(app.static_folder, 'index.html')
     
     def gen():
-
         while not q.empty():
             q.get()
 
         while streaming:
-            image = q.get()
+            image, diff = q.get()
             ret, buffer = cv2.imencode('.jpg', image)
             frame = buffer.tobytes()
+            process_diff(diff)
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
@@ -304,24 +391,12 @@ if __name__ == '__main__':
 
         return resp
 
-    @app.route('/mouse-click.js')
+    @app.route('/camera-follow.js')
     def mouse_click():
-        return send_from_directory(app.static_folder, 'mouse-click.js')
-
-    @app.route('/serial.js')
-    def serial():
-        return send_from_directory(app.static_folder, 'serial.js')
-
-    @app.route('/move.js')
-    def move():
-        return send_from_directory(app.static_folder, 'move.js')
-
-    @app.route('/camera.js')
-    def camera():
-        return send_from_directory(app.static_folder, 'camera.js')
+        return send_from_directory(app.static_folder, 'camera-follow.js')
 
     try:
-        app.run('0.0.0.0', port=8000)
+        app.run('0.0.0.0', port=80)
         serve(app)
     finally:
         streaming = False
